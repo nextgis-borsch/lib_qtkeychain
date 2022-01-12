@@ -3,7 +3,7 @@
 # Purpose:  CMake build scripts
 # Author:   Dmitry Baryshnikov, dmitry.baryshnikov@nexgis.com
 ################################################################################
-# Copyright (C) 2017-2019, NextGIS <info@nextgis.com>
+# Copyright (C) 2017-2022, NextGIS <info@nextgis.com>
 #
 # Permission is hereby granted, free of charge, to any person obtaining a
 # copy of this software and associated documentation files (the "Software"),
@@ -27,8 +27,8 @@
 function(check_version major minor rev)
 
     set(MAJOR_VERSION 0)
-    set(MINOR_VERSION 10)
-    set(REV_VERSION 0)
+    set(MINOR_VERSION 13)
+    set(REV_VERSION 2)
 
     set(${major} ${MAJOR_VERSION} PARENT_SCOPE)
     set(${minor} ${MINOR_VERSION} PARENT_SCOPE)
@@ -134,6 +134,9 @@ function(get_compiler_version ver)
             set(COMPILER "${COMPILER}-64bit")
         endif()
     endif()
+
+    # Debug
+    # set(COMPILER Clang-10.0)
 
     set(${ver} ${COMPILER} PARENT_SCOPE)
 endfunction()

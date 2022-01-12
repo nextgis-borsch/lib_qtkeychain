@@ -1,2 +1,3 @@
 .,.,,"COPYING,cpp,h,mm,xml"
 testclient.cpp,testclient.cpp,skip,
+translations,translations,,"ts",

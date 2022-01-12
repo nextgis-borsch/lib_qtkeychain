@@ -1,5 +1,5 @@
 ################################################################################
-# Copyright (C) 2020, NextGIS <info@nextgis.com>
+# Copyright (C) 2020-2022, NextGIS <info@nextgis.com>
 #
 # Permission is hereby granted, free of charge, to any person obtaining a
 # copy of this software and associated documentation files (the "Software"),
@@ -59,6 +59,7 @@ else()
     set(INSTALL_INC_DIR ${CMAKE_INSTALL_INCLUDEDIR} CACHE INTERNAL "Installation directory for headers" FORCE)
     set(INSTALL_PKGCONFIG_DIR "${INSTALL_LIB_DIR}/pkgconfig" CACHE INTERNAL "Installation directory for pkgconfig (.pc) files" FORCE)
     set(INSTALL_CMAKECONF_DIR ${CMAKE_INSTALL_DATADIR}/${PROJECT_NAME}/CMake CACHE INTERNAL "Installation directory for cmake config files" FORCE)
+    set(INSTALL_TRANSLATIONS_DIR "${CMAKE_INSTALL_DATADIR}/translations" CACHE INTERNAL "Installation directory for translations" FORCE)
 endif()
 
 set(PACKAGE_NAME ${PROJECT_NAME})
@@ -69,16 +70,15 @@ set(TARGETS ${LIB_NAME})
 
 include(util)
 
-check_version(MAJOR_VER MINOR_VER REL_VER FIX_VER)
+check_version(MAJOR_VER MINOR_VER REL_VER)
 set(VERSION ${MAJOR_VER}.${MINOR_VER}.${REL_VER})
+set(FRAMEWORK_VERSION "${MAJOR_VER}")
 report_version(${PROJECT_NAME} ${VERSION})
 
 include(GenerateExportHeader)
 include(FindAnyProject)
 
-if(CMAKE_SYSTEM_NAME STREQUAL Android)
-    set(ANDROID 1)
-endif()
+option(BUILD_TRANSLATIONS "Build translations" ON)
 
 if (WIN32)
     option(USE_CREDENTIAL_STORE "Build with windows CredentialStore support" ON)
@@ -89,33 +89,17 @@ if (WIN32)
 endif()
 
 set(QT_COMPONENTS Core)
-if(UNIX AND NOT APPLE AND NOT ANDROID)
-    set(QT_COMPONENTS ${QT_COMPONENTS} DBus)
+# if(UNIX AND NOT APPLE)
+#     set(QT_COMPONENTS ${QT_COMPONENTS} DBus)
+# endif()
+if(BUILD_TRANSLATIONS)
+    set(QT_COMPONENTS ${QT_COMPONENTS} LinguistTools)
 endif()
 
 find_anyproject(Qt5 REQUIRED COMPONENTS ${QT_COMPONENTS})
 
 string(SUBSTRING ${QT5_VERSION} 0 1 Qt5Core_VERSION_MAJOR)
 set(CMAKE_AUTOMOC ON)
-
-if (NOT Qt5Core_VERSION VERSION_LESS "5.7.0")
-    if (CMAKE_COMPILER_IS_GNUCXX)
-      if ((NOT CMAKE_CXX_COMPILER_VERSION VERSION_LESS "4.7.0") AND (CMAKE_CXX_COMPILER_VERSION VERSION_LESS "6.1.0"))
-        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11")
-      elseif(CMAKE_CXX_COMPILER_VERSION VERSION_LESS "4.7.0")
-        message(FATAL_ERROR "Can't build QtKeychain using g++-${CMAKE_CXX_COMPILER_VERSION} and Qt ${Qt5Core_VERSION}: compiler supporting C++11 is required")
-      endif()
-    elseif (CMAKE_CXX_COMPILER_ID MATCHES "Clang")
-      if (NOT ${CMAKE_CXX_COMPILER_VERSION} VERSION_LESS 3.3)
-        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11")
-      else()
-        message(FATAL_ERROR "Can't build QtKeychain using clang++-${CMAKE_CXX_COMPILER_VERSION} and Qt ${Qt5Core_VERSION}: compiler supporting C++11 is required")
-      endif()
-    elseif ((CMAKE_CXX_COMPILER_ID MATCHES "MSVC") AND (MSVC_VERSION LESS 1700))
-      message(FATAL_ERROR "Can't build QtKeychain using VC++-${MSVC_VERSION} and Qt ${Qt5Core_VERSION}: compiler supporting C++11 is required")
-    endif()
-endif()
-
 
 include_directories(${CMAKE_CURRENT_BINARY_DIR})
 
@@ -125,6 +109,19 @@ set(qtkeychain_SOURCES
     qkeychain_export.h
     keychain.h
 )
+
+if(CMAKE_CXX_COMPILER_ID MATCHES "MSVC")
+    # CMake < 3.15 sneaks in /W# flags for us, so we need a replacement,
+    # or we'll get a warning (cf. CMP0092)
+    if (CMAKE_CXX_FLAGS MATCHES "/W[0-4]")
+        string(REGEX REPLACE "/W[0-4]" "/W4" CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS}")
+    else()
+        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /W4")
+    endif()
+else()
+    # MSVC's STL / Qt headers are not MSVC -Wall clean, so don't enable it there
+    add_definitions( -Wall -Werror=return-type )
+endif()
 
 if(WIN32)
     list(APPEND qtkeychain_SOURCES keychain_win.cpp)
@@ -139,48 +136,69 @@ if(WIN32)
 endif()
 
 if(APPLE)
-    if(IOS)
-        list(APPEND qtkeychain_SOURCES keychain_ios.cpp)
-    else()
-        list(APPEND qtkeychain_SOURCES keychain_mac.cpp)
-    endif()
-
-    find_library(COREFOUNDATION_LIBRARY CoreFoundation REQUIRED)
-    list(APPEND qtkeychain_LIBRARIES ${COREFOUNDATION_LIBRARY})
-
-    find_library(SECURITY_LIBRARY Security REQUIRED)
-    list(APPEND qtkeychain_LIBRARIES ${SECURITY_LIBRARY})
+    list(APPEND qtkeychain_SOURCES keychain_apple.mm)
+    list(APPEND qtkeychain_LIBRARIES "-framework Foundation" "-framework Security")
 endif()
 
-if(UNIX AND NOT APPLE AND NOT ANDROID)
-    option(LIBSECRET_SUPPORT "Build with libsecret support" ON)
+set(qtkeychain_HEADERS
+    keychain.h ${CMAKE_CURRENT_BINARY_DIR}/qkeychain_export.h
+)
 
-    if(LIBSECRET_SUPPORT)
-        pkg_check_modules(LIBSECRET libsecret-1)
+set(qtkeychain_TR_FILES
+      translations/qtkeychain_de.ts
+      translations/qtkeychain_fr.ts
+      translations/qtkeychain_ro.ts
+      translations/qtkeychain_ru.ts
+      translations/qtkeychain_zh.ts
+)
 
-        if (LIBSECRET_FOUND)
-            add_definitions(-DHAVE_LIBSECRET=1)
-        endif()
-        INCLUDE_DIRECTORIES(${LIBSECRET_INCLUDE_DIRS})
-        list(APPEND qtkeychain_LIBRARIES ${LIBSECRET_LIBRARIES})
-    endif()
-
-    list(APPEND qtkeychain_SOURCES keychain_unix.cpp gnomekeyring.cpp libsecret.cpp plaintextstore.cpp)
-    qt5_add_dbus_interface(qtkeychain_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/org.kde.KWallet.xml kwallet_interface KWalletInterface)
-    list(APPEND qtkeychain_LIBRARIES Qt5::DBus )
-endif()
-
-if(BUILD_SHARED_LIBS)
+if(OSX_FRAMEWORK)
+    add_library(${LIB_NAME} SHARED ${qtkeychain_HEADERS} ${qtkeychain_SOURCES} ${QM_FILES})
+        set_property(SOURCE ${QM_FILES} PROPERTY MACOSX_PACKAGE_LOCATION "Resources/translations")
+        # set_property(SOURCE ${qtkeychain_HEADERS} PROPERTY MACOSX_PACKAGE_LOCATION "Headers/framework")
+        set_target_properties(${LIB_NAME} PROPERTIES
+            # DEFINE_SYMBOL ${PROJECT_UPPER_NAME}_LIBRARY
+            FRAMEWORK TRUE
+            FRAMEWORK_VERSION ${FRAMEWORK_VERSION}
+            MACOSX_FRAMEWORK_SHORT_VERSION_STRING ${VERSION}
+            MACOSX_FRAMEWORK_BUNDLE_VERSION ${VERSION}
+            VERSION ${VERSION}
+            SOVERSION ${MAJOR_VER}
+            MACOSX_FRAMEWORK_IDENTIFIER org.qtkeychain.${LIB_NAME}
+            XCODE_ATTRIBUTE_INSTALL_PATH "@rpath"
+            PUBLIC_HEADER "${qtkeychain_HEADERS}"
+        )
+elseif(BUILD_SHARED_LIBS)
     add_library(${LIB_NAME} SHARED ${qtkeychain_SOURCES})
+    set_target_properties(${LIB_NAME} PROPERTIES
+    VERSION ${VERSION})
 else()
     add_library(${LIB_NAME} STATIC ${qtkeychain_SOURCES})
 endif()
 
-target_link_libraries(${LIB_NAME} PUBLIC ${qtkeychain_LIBRARIES})
+if(WIN32)
+    set_target_properties( ${LIB_NAME} PROPERTIES DEBUG_POSTFIX "d" )
+endif()
+
+file(GLOB qtkeychain_TR_SOURCES *.cpp *.h *.ui)
+if (BUILD_TRANSLATIONS)
+    qt5_create_translation(qtkeychain_MESSAGES ${qtkeychain_TR_SOURCES} ${qtkeychain_TR_FILES})
+    qt5_add_translation(QM_FILES ${qtkeychain_TR_FILES})
+    add_custom_target(messages DEPENDS ${qtkeychain_MESSAGES})
+    add_custom_target(translations DEPENDS ${QM_FILES} messages)
+    # https://github.com/frankosterfeld/qtkeychain/issues/185
+    add_dependencies(${LIB_NAME} translations)
+
+    if(NOT SKIP_INSTALL_FILES AND NOT SKIP_INSTALL_ALL)
+        install(FILES ${QM_FILES} DESTINATION ${QTKEYCHAIN_TRANSLATIONS_DIR})
+    endif()
+endif()
+
+target_link_libraries(${LIB_NAME} PRIVATE ${qtkeychain_LIBRARIES})
 
 generate_export_header(${LIB_NAME}
-  EXPORT_FILE_NAME qkeychain_export.h
-  EXPORT_MACRO_NAME QKEYCHAIN_EXPORT
+    EXPORT_FILE_NAME qkeychain_export.h
+    EXPORT_MACRO_NAME QKEYCHAIN_EXPORT
 )
 
 add_custom_target(uninstall COMMAND ${CMAKE_COMMAND} -P ${CMAKE_CURRENT_BINARY_DIR}/cmake_uninstall.cmake)
@@ -188,9 +206,9 @@ add_custom_target(uninstall COMMAND ${CMAKE_COMMAND} -P ${CMAKE_CURRENT_BINARY_D
 # Export package ===============================================================
 
 # Add path to includes to build-tree export
-target_include_directories(${TARGETS} PUBLIC
- $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
- $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>
+target_include_directories(${TARGETS} PRIVATE
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>
 )
 
 # Add all targets to the build-tree export set
@@ -207,6 +225,10 @@ endif()
 configure_file(cmake/PackageConfig.cmake.in
    ${PROJECT_BINARY_DIR}/${PACKAGE_UPPER_NAME}Config.cmake @ONLY)
 
+if(NOT SKIP_INSTALL_HEADERS AND NOT SKIP_INSTALL_ALL)   
+    install(FILES ${qtkeychain_HEADERS} DESTINATION ${INSTALL_INC_DIR})
+endif()
+
 if(NOT SKIP_INSTALL_LIBRARIES AND NOT SKIP_INSTALL_ALL)
     install(TARGETS ${TARGETS} 
         EXPORT ${PACKAGE_UPPER_NAME}Targets
@@ -215,10 +237,6 @@ if(NOT SKIP_INSTALL_LIBRARIES AND NOT SKIP_INSTALL_ALL)
         LIBRARY DESTINATION ${INSTALL_LIB_DIR}
         INCLUDES DESTINATION ${INSTALL_INC_DIR}
         FRAMEWORK DESTINATION ${INSTALL_LIB_DIR}
-    )
-
-    install(FILES keychain.h ${CMAKE_CURRENT_BINARY_DIR}/qkeychain_export.h
-        DESTINATION ${INSTALL_INC_DIR}
     )
 
     # Install the <Package>Config.cmake
