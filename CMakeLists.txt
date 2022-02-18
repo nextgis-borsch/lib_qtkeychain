@@ -190,7 +190,7 @@ if (BUILD_TRANSLATIONS)
     add_dependencies(${LIB_NAME} translations)
 
     if(NOT SKIP_INSTALL_FILES AND NOT SKIP_INSTALL_ALL)
-        install(FILES ${QM_FILES} DESTINATION ${QTKEYCHAIN_TRANSLATIONS_DIR})
+        install(FILES ${QM_FILES} DESTINATION ${INSTALL_TRANSLATIONS_DIR})
     endif()
 endif()
 
