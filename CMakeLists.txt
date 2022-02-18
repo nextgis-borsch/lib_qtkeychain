@@ -182,6 +182,24 @@ endif()
 
 file(GLOB qtkeychain_TR_SOURCES *.cpp *.h *.ui)
 if (BUILD_TRANSLATIONS)
+
+    if(WIN32)
+        # Copy zlib1.dll to qt5 bin path
+        find_anyproject(ZLIB DEFAULT ON)
+
+        if(ZLIB_FOUND)
+            get_target_property(ZLIB_DLL ${ZLIB_LIBRARIES} IMPORTED_LOCATION_RELEASE)
+            get_target_property(QT5_BIN_PATH Qt5::Core IMPORTED_LOCATION_RELEASE)
+            get_filename_component(QT5_BIN_PATH ${QT5_BIN_PATH} DIRECTORY)
+
+            warning_message("Copy ${ZLIB_DLL} to ${QT5_BIN_PATH}")
+
+            execute_process(
+                COMMAND ${CMAKE_COMMAND} -E copy_if_different ${ZLIB_DLL} ${QT5_BIN_PATH}
+            )
+        endif()
+    endif()
+
     qt5_create_translation(qtkeychain_MESSAGES ${qtkeychain_TR_SOURCES} ${qtkeychain_TR_FILES})
     qt5_add_translation(QM_FILES ${qtkeychain_TR_FILES})
     add_custom_target(messages DEPENDS ${qtkeychain_MESSAGES})
